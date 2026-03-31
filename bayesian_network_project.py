@@ -85,38 +85,49 @@ gene_target = gene_data["disease_status"]  # TODO: Extract target
 # TODO: Normalize gene expression data
 # HINT: Use StandardScaler() to normalize the features
 # HINT: Use fit_transform() and create a DataFrame with original column names
-scaler = StandardScaler()  # TODO: Create scaler
-gene_features_scaled = scaler.fit_transform(gene_features, gene_target)  # TODO: Scale features
+scaler = StandardScaler().set_output(transform="pandas")  # TODO: Create scaler
+gene_features_scaled = scaler.fit_transform(gene_features)  # TODO: Scale features
+
 
 # TODO: Create binary features for high/low expression
 # HINT: Use (gene_features_scaled > 0).astype(int) to create binary features
 # HINT: Rename columns to add "_high" suffix
-gene_features_binary = None  # TODO: Create binary features
+gene_features_binary = (gene_features_scaled > 0).astype(int)  # TODO: Create binary features
+gene_features_binary.columns = [f"{col}_high" for col in gene_features_binary.columns]
+
 
 # TODO: Combine original and binary features
 # HINT: Use pd.concat() to combine scaled and binary features
-gene_features_combined = None  # TODO: Combine features
+gene_features_combined = pd.concat([gene_features_scaled, gene_features_binary])  # TODO: Combine features
 print(f"Combined feature set shape: {gene_features_combined.shape if gene_features_combined is not None else 'Not implemented'}")
 
 # TODO: Prepare disease markers data
 # HINT: Separate features from target variable
-disease_features = None  # TODO: Extract disease features
-disease_target = None  # TODO: Extract disease target
+disease_features = disease_data.drop(columns=["patient_id", "diabetes_status"])  # TODO: Extract disease features
+disease_target = disease_data["diabetes_status"]  # TODO: Extract disease target
 
 # TODO: Create interaction features for SNPs
 # HINT: Find SNP columns using list comprehension with .startswith('rs')
 # NOTE: The dataset now contains real SNP names like rs7903146, rs12255372, etc.
-snp_columns = None  # TODO: Find SNP columns
+snp_columns = [col for col in disease_features.columns if col.startswith('rs')]  # TODO: Find SNP columns
 clinical_columns = ['age', 'bmi', 'glucose', 'insulin', 'hdl_cholesterol']
 
 # TODO: Create SNP interaction features
 # HINT: Use nested loops to create pairwise interactions
 # HINT: Multiply SNP values: disease_features[snp_columns[i]] * disease_features[snp_columns[j]]
-snp_interactions = None  # TODO: Create SNP interactions
+snp_interactions = {}
+for i in range(len(snp_columns)):
+    for j in range(i+1, len(snp_columns)):
+        col1 = snp_columns[i]
+        col2 = snp_columns[j]
+        interaction_name = f"{col1}_x_{col2}"
+
+        snp_interactions[interaction_name] = disease_features[col1] * disease_features[col2]
+snp_interactions = pd.DataFrame(snp_interactions, index=disease_features.index)  # TODO: Create SNP interactions
 
 # TODO: Combine clinical and SNP features
 # HINT: Use pd.concat() to combine original features with interaction features
-disease_features_combined = None  # TODO: Combine disease features
+disease_features_combined = pd.concat([disease_features[snp_columns], snp_interactions], axis=1)  # TODO: Combine disease features
 print(f"Disease features combined shape: {disease_features_combined.shape if disease_features_combined is not None else 'Not implemented'}")
 
 # ============================================================================
