@@ -49,6 +49,17 @@ protein_data = pd.read_csv('data/protein_interactions.csv')
 # HINT: Use .shape, .columns, and .value_counts() to explore the data
 print(f"Gene Expression Dataset Shape: {gene_data.shape if gene_data is not None else 'Not loaded'}")
 # TODO: Add more exploration code here
+print(f"Gene Expression Columns: {list(gene_data.columns)}")
+print("Gene Disease Status Distribution:")
+print(gene_data["disease_status"].value_counts())
+print(f"\nDisease Markers Dataset Shape: {disease_data.shape if disease_data is not None else 'Not loaded'}")
+print(f"Disease Markers Columns: {list(disease_data.columns)}")
+print("Diabetes Status Distribution:")
+print(disease_data["diabetes_status"].value_counts())
+print(f"\nProtein Interaction Dataset Shape: {protein_data.shape if protein_data is not None else 'Not loaded'}")
+print(f"Protein Interaction Columns: {list(protein_data.columns)}")
+print("Interaction Type Distribution:")
+print(protein_data["interaction_type"].value_counts())
 
 
 # TODO: Calculate basic statistics for gene expression data
@@ -98,7 +109,7 @@ gene_features_binary.columns = [f"{col}_high" for col in gene_features_binary.co
 
 # TODO: Combine original and binary features
 # HINT: Use pd.concat() to combine scaled and binary features
-gene_features_combined = pd.concat([gene_features_scaled, gene_features_binary])  # TODO: Combine features
+gene_features_combined = pd.concat([gene_features_scaled, gene_features_binary], axis=1)  # TODO: Combine features
 print(f"Combined feature set shape: {gene_features_combined.shape if gene_features_combined is not None else 'Not implemented'}")
 
 # TODO: Prepare disease markers data
@@ -127,7 +138,7 @@ snp_interactions = pd.DataFrame(snp_interactions, index=disease_features.index) 
 
 # TODO: Combine clinical and SNP features
 # HINT: Use pd.concat() to combine original features with interaction features
-disease_features_combined = pd.concat([disease_features[snp_columns], snp_interactions], axis=1)  # TODO: Combine disease features
+disease_features_combined = pd.concat([disease_features[clinical_columns + snp_columns], snp_interactions], axis=1)  # TODO: Combine disease features
 print(f"Disease features combined shape: {disease_features_combined.shape if disease_features_combined is not None else 'Not implemented'}")
 
 # ============================================================================
@@ -153,13 +164,20 @@ def learn_bayesian_structure(data, threshold=0.3):
     """
     # TODO: Calculate correlation matrix
     # HINT: Use data.corr().abs() to get absolute correlations
-    correlations = None  # TODO: Calculate correlations
+    correlations = data.corr().abs()  # TODO: Calculate correlations
     edges = []
     
     # TODO: Find edges above threshold
     # HINT: Use nested loops to check each pair of features
     # HINT: Only add edges if correlation > threshold
     # TODO: Add your loop code here
+    for i in range(len(correlations.columns)):
+        for j in range(i + 1, len(correlations.columns)):
+            corr_val = correlations.iloc[i, j]
+            if corr_val > threshold:
+                node1 = correlations.columns[i]
+                node2 = correlations.columns[j]
+                edges.append((node1, node2, corr_val))
     
     return edges
 
@@ -167,21 +185,25 @@ def learn_bayesian_structure(data, threshold=0.3):
 # HINT: Select a subset of genes for network analysis
 # HINT: Use genes from different modules: ['CDK1', 'MAPK1', 'PIK3CA', 'BCL2', 'GLUT1', 'MYC']
 selected_genes = ['CDK1', 'MAPK1', 'PIK3CA', 'BCL2', 'GLUT1', 'MYC']
-gene_subset = None  # TODO: Select gene subset
-gene_network_edges = None  # TODO: Learn gene network structure
+gene_subset = gene_features_scaled[selected_genes]  # TODO: Select gene subset
+gene_network_edges = learn_bayesian_structure(gene_subset, threshold=0.3)  # TODO: Learn gene network structure
 print(f"Gene network edges found: {len(gene_network_edges) if gene_network_edges is not None else 'Not implemented'}")
 
 # TODO: Learn structure for disease markers network
 # HINT: Use first 15 columns of disease_features_combined
 # HINT: Use a lower threshold (0.1) for disease markers
-disease_network_edges = None  # TODO: Learn disease network structure
+disease_network_edges = learn_bayesian_structure(disease_features_combined.iloc[:, :15], threshold=0.1)  # TODO: Learn disease network structure
 print(f"Disease network edges found: {len(disease_network_edges) if disease_network_edges is not None else 'Not implemented'}")
 
 # TODO: Create network graphs
 # HINT: Use nx.Graph() to create NetworkX graphs
 # HINT: Add edges with weights from correlation values
-gene_graph = None  # TODO: Create gene graph
-disease_graph = None  # TODO: Create disease graph
+gene_graph = nx.Graph()  # TODO: Create gene graph
+disease_graph = nx.Graph()  # TODO: Create disease graph
+for node1, node2, weight in gene_network_edges:
+    gene_graph.add_edge(node1, node2, weight=weight)
+for node1, node2, weight in disease_network_edges:
+    disease_graph.add_edge(node1, node2, weight=weight)
 
 print(f"Gene network nodes: {gene_graph.number_of_nodes() if gene_graph is not None else 'Not created'}, edges: {gene_graph.number_of_edges() if gene_graph is not None else 'Not created'}")
 print(f"Disease network nodes: {disease_graph.number_of_nodes() if disease_graph is not None else 'Not created'}, edges: {disease_graph.number_of_edges() if disease_graph is not None else 'Not created'}")
@@ -221,32 +243,43 @@ def calculate_conditional_probabilities(data, target_col, feature_cols):
                     # TODO: Calculate conditional probability
                     # HINT: Count samples where both conditions are met
                     # HINT: Divide by count of samples where feature condition is met
-                    prob = 0.0  # TODO: Calculate probability
+                    numerator = len(data[(data[feature] == feature_val) & (data[target_col] == target_val)])
+                    denominator = len(data[data[feature] == feature_val])
+                    prob = numerator / denominator if denominator > 0 else 0.0  # TODO: Calculate probability
                     conditional_probs[f"P({target_col}={target_val}|{feature}={feature_val})"] = prob
     
     return conditional_probs
 
 # TODO: Calculate conditional probabilities for gene expression
 # HINT: Use first 5 binary features
-gene_binary_features = None  # TODO: Select binary features
-gene_conditional_probs = None  # TODO: Calculate conditional probabilities
+gene_binary_features = gene_features_binary.iloc[:, :5].copy()  # TODO: Select binary features
+gene_data_combined = pd.concat([gene_binary_features, gene_target.reset_index(drop=True)], axis=1)
+gene_conditional_probs = calculate_conditional_probabilities(gene_data_combined, "disease_status", list(gene_binary_features.columns))  # TODO: Calculate conditional probabilities
 
 print("Conditional probabilities for gene expression:")
 # TODO: Add probability printing code
+for prob_name, prob_value in gene_conditional_probs.items():
+    print(f"  {prob_name}: {prob_value:.3f}")
 
 # TODO: Calculate conditional probabilities for disease markers
 # HINT: Ensure SNP columns are binary (0/1) before calculation
 # HINT: Use first 5 SNP columns from snp_columns
-disease_binary_features = None  # TODO: Select disease binary features
+disease_binary_features = disease_data[snp_columns[:5]].copy()  # TODO: Select disease binary features
 
 # TODO: Binarize SNP columns if needed
 # HINT: Check if values are binary, if not convert to binary
 # HINT: Use (disease_binary_features[col] > 0).astype(int) to binarize
 print("\nStep 4c: Checking SNP columns for binary values:")
 # TODO: Add SNP checking code
+for col in disease_binary_features.columns:
+    unique_vals = sorted(disease_binary_features[col].unique())
+    print(f"  {col} unique values before binarizing: {unique_vals}")
+    if set(unique_vals) - {0, 1}:
+        disease_binary_features[col] = (disease_binary_features[col] > 0).astype(int)
+    print(f"  {col} unique values after binarizing: {sorted(disease_binary_features[col].unique())}")
 
-disease_data_combined = None  # TODO: Combine disease data
-disease_conditional_probs = None  # TODO: Calculate disease conditional probabilities
+disease_data_combined = pd.concat([disease_binary_features, disease_target.reset_index(drop=True)], axis=1)  # TODO: Combine disease data
+disease_conditional_probs = calculate_conditional_probabilities(disease_data_combined, "diabetes_status", list(disease_binary_features.columns))  # TODO: Calculate disease conditional probabilities
 # NOTE: disease_conditional_probs should be a dictionary for grading script access
 
 print(f"Disease binary features shape: {disease_binary_features.shape if disease_binary_features is not None else 'Not implemented'}")
@@ -255,6 +288,8 @@ print(f"SNP columns: {snp_columns[:5] if snp_columns is not None else 'Not imple
 
 print("\nConditional probabilities for disease markers:")
 # TODO: Add disease probability printing code
+for prob_name, prob_value in disease_conditional_probs.items():
+    print(f"  {prob_name}: {prob_value:.3f}")
 
 # ============================================================================
 # [18 pts] STEP 5: Probabilistic Inference
@@ -293,8 +328,8 @@ def naive_bayes_inference(features, conditional_probs, prior_probs):
             
             # TODO: Get conditional probabilities from dictionary
             # HINT: Use .get() method with default value 0.5
-            prob_0 = 0.5  # TODO: Get probability for class 0
-            prob_1 = 0.5  # TODO: Get probability for class 1
+            prob_0 = conditional_probs.get(f"P(disease_status=0|{feature}={feature_val})", 0.5)  # TODO: Get probability for class 0
+            prob_1 = conditional_probs.get(f"P(disease_status=1|{feature}={feature_val})", 0.5)  # TODO: Get probability for class 1
             
             # TODO: Multiply likelihoods
             likelihood_0 *= prob_0  # TODO: Update likelihood_0
@@ -302,39 +337,42 @@ def naive_bayes_inference(features, conditional_probs, prior_probs):
         
         # TODO: Apply prior probabilities
         # HINT: Multiply likelihood by prior: posterior = likelihood * prior
-        posterior_0 = 0.0  # TODO: Calculate posterior for class 0
-        posterior_1 = 0.0  # TODO: Calculate posterior for class 1
+        posterior_0 = likelihood_0 * prior_probs[0]  # TODO: Calculate posterior for class 0
+        posterior_1 = likelihood_1 * prior_probs[1]  # TODO: Calculate posterior for class 1
         
         # TODO: Normalize probabilities
         # HINT: Divide by sum of posteriors
-        total = 0.0  # TODO: Calculate total
-        posterior_0 /= total  # TODO: Normalize
-        posterior_1 /= total  # TODO: Normalize
+        total = posterior_0 + posterior_1  # TODO: Calculate total
+        if total > 0:
+            posterior_0 /= total  # TODO: Normalize
+            posterior_1 /= total  # TODO: Normalize
         
         # TODO: Make prediction
         # HINT: Choose class with higher posterior probability
-        predictions.append(0)  # TODO: Make prediction
+        predictions.append(1 if posterior_1 > posterior_0 else 0)  # TODO: Make prediction
     
     return predictions
 
 # TODO: Split data for inference
 # HINT: Use train_test_split() with test_size=0.3 and random_state=42
-X_train = None  # TODO: Split training features
-X_test = None  # TODO: Split test features
-y_train = None  # TODO: Split training targets
-y_test = None  # TODO: Split test targets
+X_train, X_test, y_train, y_test = train_test_split(gene_binary_features, gene_target, test_size=0.3, random_state=42)  # TODO: Split training features
+
+# TODO: Recalculate conditional probabilities using training split only
+# HINT: This avoids data leakage during inference
+training_data_for_probs = pd.concat([X_train.reset_index(drop=True), y_train.reset_index(drop=True)], axis=1)
+gene_conditional_probs_training = calculate_conditional_probabilities(training_data_for_probs, "disease_status", list(X_train.columns))
 
 # TODO: Calculate prior probabilities
 # HINT: Count samples in each class and divide by total
-prior_probs = [0.0, 0.0]  # TODO: Calculate prior probabilities
+prior_probs = [float((y_train == 0).mean()), float((y_train == 1).mean())]  # TODO: Calculate prior probabilities
 
 # TODO: Perform inference
 # HINT: Call naive_bayes_inference() with test features, conditional probabilities, and priors
-predictions = None  # TODO: Perform inference
+predictions = naive_bayes_inference(X_test, gene_conditional_probs_training, prior_probs)  # TODO: Perform inference
 
 # TODO: Calculate accuracy
 # HINT: Use accuracy_score() from sklearn.metrics
-accuracy = 0.0  # TODO: Calculate accuracy
+accuracy = accuracy_score(y_test, predictions)  # TODO: Calculate accuracy
 print(f"Naive Bayes inference accuracy: {accuracy:.3f}")
 
 # ============================================================================
@@ -360,42 +398,47 @@ def analyze_network_properties(graph):
     
     # TODO: Calculate basic properties
     # HINT: Use graph.number_of_nodes(), graph.number_of_edges(), nx.density()
-    properties['nodes'] = 0  # TODO: Count nodes
-    properties['edges'] = 0  # TODO: Count edges
-    properties['density'] = 0.0  # TODO: Calculate density
+    properties['nodes'] = graph.number_of_nodes()  # TODO: Count nodes
+    properties['edges'] = graph.number_of_edges()  # TODO: Count edges
+    properties['density'] = nx.density(graph) if graph.number_of_nodes() > 1 else 0.0  # TODO: Calculate density
     
     # TODO: Calculate centrality measures
     # HINT: Use dict(graph.degree()) to get degree dictionary
     if graph.number_of_nodes() > 0:
         # TODO: Calculate average degree
         # HINT: Sum all degrees and divide by number of nodes
-        properties['avg_degree'] = 0.0  # TODO: Calculate average degree
+        degree_dict = dict(graph.degree())
+        properties['avg_degree'] = sum(degree_dict.values()) / graph.number_of_nodes()  # TODO: Calculate average degree
         
         # TODO: Calculate maximum degree
         # HINT: Use max() on degree values
-        properties['max_degree'] = 0  # TODO: Calculate max degree
+        properties['max_degree'] = max(degree_dict.values()) if degree_dict else 0  # TODO: Calculate max degree
         
         # TODO: Calculate clustering coefficient
         # HINT: Use nx.average_clustering(graph)
-        properties['avg_clustering'] = 0.0  # TODO: Calculate clustering
+        properties['avg_clustering'] = nx.average_clustering(graph)  # TODO: Calculate clustering
         
         # TODO: Calculate number of connected components
         # HINT: Use nx.number_connected_components(graph)
-        properties['connected_components'] = 0  # TODO: Count components
+        properties['connected_components'] = nx.number_connected_components(graph)  # TODO: Count components
     
     return properties
 
 # TODO: Analyze gene network
 # HINT: Call analyze_network_properties() with gene_graph
-gene_properties = None  # TODO: Analyze gene network
+gene_properties = analyze_network_properties(gene_graph)  # TODO: Analyze gene network
 print("Gene Network Properties:")
 # TODO: Add property printing code
+for key, val in gene_properties.items():
+    print(f"  {key}: {val}")
 
 # TODO: Analyze disease network
 # HINT: Call analyze_network_properties() with disease_graph
-disease_properties = None  # TODO: Analyze disease network
+disease_properties = analyze_network_properties(disease_graph)  # TODO: Analyze disease network
 print("\nDisease Network Properties:")
 # TODO: Add property printing code
+for key, val in disease_properties.items():
+    print(f"  {key}: {val}")
 
 # TODO: Visualize networks
 # HINT: Use visualize_network() and plot_network_metrics() functions
@@ -404,6 +447,10 @@ print("\nDisease Network Properties:")
 print("\nVisualizing networks...")
 # TODO: Add visualization code for gene network
 # TODO: Add visualization code for disease network
+visualize_network(gene_graph, title="Gene Expression Network")
+plot_network_metrics(gene_graph, title="Gene Network Metrics")
+visualize_network(disease_graph, title="Disease Marker Network")
+plot_network_metrics(disease_graph, title="Disease Network Metrics")
 
 # ============================================================================
 # [10 pts] STEP 7: Protein Interaction Network Analysis
@@ -414,32 +461,39 @@ print("-" * 50)
 
 # TODO: Create protein interaction network
 # HINT: Use nx.Graph() to create a new graph
-protein_graph = None  # TODO: Create protein graph
+protein_graph = nx.Graph()  # TODO: Create protein graph
 
 # TODO: Add edges from protein interaction data
 # HINT: Loop through protein_data rows
 # HINT: Add edges with protein names and interaction scores as weights
 # TODO: Add your loop code here
+for _, row in protein_data.iterrows():
+    protein_graph.add_edge(row["protein_1"], row["protein_2"], weight=row["interaction_score"], interaction_type=row["interaction_type"])
 
 # TODO: Analyze protein network
 # HINT: Use the same analyze_network_properties() function
-protein_properties = None  # TODO: Analyze protein network
+protein_properties = analyze_network_properties(protein_graph)  # TODO: Analyze protein network
 print("Protein Interaction Network Properties:")
 # TODO: Add property printing code
+for key, val in protein_properties.items():
+    print(f"  {key}: {val}")
 
 # TODO: Find hub proteins (high degree nodes)
 # HINT: Use dict(protein_graph.degree()) to get degree dictionary
 # HINT: Sort by degree in descending order and take top 5
-protein_degrees = None  # TODO: Get protein degrees
-hub_proteins = None  # TODO: Find hub proteins
+protein_degrees = dict(protein_graph.degree())  # TODO: Get protein degrees
+hub_proteins = sorted(protein_degrees.items(), key=lambda x: x[1], reverse=True)[:5]  # TODO: Find hub proteins
 print(f"\nTop 5 hub proteins:")
 # TODO: Add hub protein printing code
+for protein, degree in hub_proteins:
+    print(f"  {protein}: degree {degree}")
 
 # TODO: Analyze interaction types
 # HINT: Use .value_counts() on interaction_type column
-interaction_types = None  # TODO: Analyze interaction types
+interaction_types = protein_data["interaction_type"].value_counts()  # TODO: Analyze interaction types
 print(f"\nInteraction type distribution:")
 # TODO: Add interaction type printing code
+print(interaction_types)
 
 # TODO: Visualize protein network
 # HINT: Use visualize_network() and plot_network_metrics() functions
@@ -447,6 +501,8 @@ print(f"\nInteraction type distribution:")
 # HINT: Call plot_network_metrics(protein_graph, title="Protein Network Metrics")
 print("\nVisualizing protein interaction network...")
 # TODO: Add visualization code for protein network
+visualize_network(protein_graph, title="Protein Interaction Network")
+plot_network_metrics(protein_graph, title="Protein Network Metrics")
 
 # ============================================================================
 # [4 pts] STEP 8: Model Evaluation and Biological Interpretation
@@ -457,19 +513,21 @@ print("-" * 50)
 
 # TODO: Evaluate gene expression model
 # HINT: Use confusion_matrix() and classification_report() from sklearn.metrics
-confusion_mat = None  # TODO: Calculate confusion matrix
-classification_rep = None  # TODO: Generate classification report
+confusion_mat = confusion_matrix(y_test, predictions)  # TODO: Calculate confusion matrix
+classification_rep = classification_report(y_test, predictions)  # TODO: Generate classification report
 
 print("Gene Expression Model Evaluation:")
 # TODO: Add evaluation printing code
+print(confusion_mat)
+print(classification_rep)
 
 # TODO: Calculate additional biological metrics
 # HINT: Extract true negatives, false positives, false negatives, true positives from confusion matrix
 # HINT: Calculate sensitivity (TPR), specificity (TNR), and precision
-tn, fp, fn, tp = 0, 0, 0, 0  # TODO: Extract confusion matrix values
-sensitivity = 0.0  # TODO: Calculate sensitivity
-specificity = 0.0  # TODO: Calculate specificity
-precision = 0.0  # TODO: Calculate precision
+tn, fp, fn, tp = confusion_mat.ravel()  # TODO: Extract confusion matrix values
+sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0  # TODO: Calculate sensitivity
+specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0  # TODO: Calculate specificity
+precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0  # TODO: Calculate precision
 
 print(f"\nBiological Metrics:")
 print(f"  Sensitivity (True Positive Rate): {sensitivity:.3f}")
@@ -501,16 +559,45 @@ def advanced_network_analysis(graph, data, target_col):
     
     # TODO: Find communities
     # HINT: Use nx.community.greedy_modularity_communities(graph)
-    communities = None  # TODO: Find communities
-    results['num_communities'] = 0  # TODO: Count communities
-    results['avg_community_size'] = 0.0  # TODO: Calculate average size
+    if graph.number_of_nodes() == 0 or graph.number_of_edges() == 0:
+        communities = []
+    else:
+        communities = list(nx.community.greedy_modularity_communities(graph))  # TODO: Find communities
+    results['num_communities'] = len(communities)  # TODO: Count communities
+    results['avg_community_size'] = float(np.mean([len(c) for c in communities])) if communities else 0.0  # TODO: Calculate average size
     
     # TODO: Calculate betweenness centrality for key nodes
     # HINT: Use nx.betweenness_centrality(graph)
     # HINT: Sort by centrality and take top 3
-    betweenness = None  # TODO: Calculate betweenness
-    top_betweenness = None  # TODO: Find top betweenness nodes
+    betweenness = nx.betweenness_centrality(graph) if graph.number_of_nodes() > 0 else {}  # TODO: Calculate betweenness
+    top_betweenness = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)[:3]  # TODO: Find top betweenness nodes
     results['top_betweenness'] = top_betweenness
+
+    if graph.number_of_nodes() > 4:
+        random_state = np.random.default_rng(42)
+        removal_count = max(1, int(0.1 * graph.number_of_nodes()))
+
+        random_nodes_to_remove = random_state.choice(list(graph.nodes()), size=removal_count, replace=False)
+        random_removed_graph = graph.copy()
+        random_removed_graph.remove_nodes_from(random_nodes_to_remove)
+
+        top_degree_nodes = sorted(dict(graph.degree()).items(), key=lambda x: x[1], reverse=True)[:removal_count]
+        targeted_removed_graph = graph.copy()
+        targeted_removed_graph.remove_nodes_from([node for node, _ in top_degree_nodes])
+
+        random_component_size = max((len(component) for component in nx.connected_components(random_removed_graph)), default=0)
+        targeted_component_size = max((len(component) for component in nx.connected_components(targeted_removed_graph)), default=0)
+        results['robustness'] = {
+            'nodes_removed': removal_count,
+            'largest_component_after_random_removal': random_component_size,
+            'largest_component_after_targeted_removal': targeted_component_size
+        }
+    else:
+        results['robustness'] = {
+            'nodes_removed': 0,
+            'largest_component_after_random_removal': graph.number_of_nodes(),
+            'largest_component_after_targeted_removal': graph.number_of_nodes()
+        }
     
     # TODO: Analyze correlation between network position and target
     # HINT: This is optional - you can skip this part
@@ -520,9 +607,12 @@ def advanced_network_analysis(graph, data, target_col):
 
 # TODO: Perform advanced analysis for gene network
 # HINT: Call advanced_network_analysis() with gene_graph
-gene_advanced = None  # TODO: Perform advanced analysis
+gene_analysis_data = pd.concat([gene_subset.reset_index(drop=True), gene_target.reset_index(drop=True)], axis=1)
+gene_advanced = advanced_network_analysis(gene_graph, gene_analysis_data, "disease_status")  # TODO: Perform advanced analysis
 print("Advanced Gene Network Analysis:")
 # TODO: Add advanced analysis printing code
+for key, val in gene_advanced.items():
+    print(f"  {key}: {val}")
 
 # ============================================================================
 # [CONCEPTUAL 15 pts] CONCEPTUAL QUESTIONS
@@ -544,7 +634,7 @@ D) They require less data
 Your answer: [TODO: Choose A, B, C, or D]
 """
 
-q1_answer = "TODO"  # TODO: Replace with your answer (A, B, C, or D)
+q1_answer = "B"  # TODO: Replace with your answer (A, B, C, or D)
 
 """
 Q2: In the context of gene expression analysis, what does a high correlation between 
@@ -558,7 +648,7 @@ D) The genes are always expressed together
 Your answer: [TODO: Choose A, B, C, or D]
 """
 
-q2_answer = "TODO"  # TODO: Replace with your answer (A, B, C, or D)
+q2_answer = "B"  # TODO: Replace with your answer (A, B, C, or D)
 
 """
 Q3: When analyzing protein interaction networks, what does a high betweenness centrality 
@@ -572,7 +662,7 @@ D) The protein is essential for cell survival
 Your answer: [TODO: Choose A, B, C, or D]
 """
 
-q3_answer = "TODO"  # TODO: Replace with your answer (A, B, C, or D)
+q3_answer = "B"  # TODO: Replace with your answer (A, B, C, or D)
 
 print("Conceptual Questions Answered:")
 print(f"Q1: {q1_answer}")
@@ -589,14 +679,14 @@ print("=" * 60)
 # TODO: Store final results
 # HINT: Create a dictionary with all your results
 final_results = {
-    'gene_network_edges': 0,  # TODO: Count gene network edges
-    'disease_network_edges': 0,  # TODO: Count disease network edges
-    'protein_network_nodes': 0,  # TODO: Count protein network nodes
-    'protein_network_edges': 0,  # TODO: Count protein network edges
-    'inference_accuracy': 0.0,  # TODO: Store inference accuracy
-    'gene_network_density': 0.0,  # TODO: Store gene network density
-    'disease_network_density': 0.0,  # TODO: Store disease network density
-    'protein_network_density': 0.0,  # TODO: Store protein network density
+    'gene_network_edges': len(gene_network_edges),  # TODO: Count gene network edges
+    'disease_network_edges': len(disease_network_edges),  # TODO: Count disease network edges
+    'protein_network_nodes': protein_graph.number_of_nodes(),  # TODO: Count protein network nodes
+    'protein_network_edges': protein_graph.number_of_edges(),  # TODO: Count protein network edges
+    'inference_accuracy': accuracy,  # TODO: Store inference accuracy
+    'gene_network_density': gene_properties.get('density', 0.0),  # TODO: Store gene network density
+    'disease_network_density': disease_properties.get('density', 0.0),  # TODO: Store disease network density
+    'protein_network_density': protein_properties.get('density', 0.0),  # TODO: Store protein network density
     'q1_answer': q1_answer,
     'q2_answer': q2_answer,
     'q3_answer': q3_answer
