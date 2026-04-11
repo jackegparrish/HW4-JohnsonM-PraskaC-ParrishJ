@@ -10,7 +10,11 @@ STUDENT ID: 1281351
 STUDENT NAME: Connor Praska
 STUDENT ID: 1347238
 
-## Run in root directory
+## Run in root directory (even though the bayesian_network_project.py is actually in /src as per instructions)
 
-python3 bayesian_network_project.py  
+python3 -m src.bayesian_network_project
+
+# An important note:
+
+Running the code generates plots; the resulting .png files are included in this submission
 
