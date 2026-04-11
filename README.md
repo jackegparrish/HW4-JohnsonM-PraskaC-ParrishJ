@@ -16,5 +16,5 @@ python3 -m src.bayesian_network_project
 
 # An important note:
 
-Running the code generates plots; the resulting .png files are included in this submission
+Running the code generates plots and the resulting .png files are already included in this submission
 
